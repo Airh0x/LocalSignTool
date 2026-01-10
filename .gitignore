@@ -82,3 +82,11 @@ yarn-error.log*
 # Backup files
 *.orig
 *~
+
+# iOS App build artifacts
+ios-app/*.xcodeproj/xcuserdata/
+ios-app/*.xcworkspace/xcuserdata/
+ios-app/DerivedData/
+ios-app/*.app
+ios-app/*.ipa
+ios-app/.DS_Store

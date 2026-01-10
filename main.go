@@ -31,6 +31,7 @@ import (
 	"LocalSignTools/src/builders"
 	"LocalSignTools/src/config"
 	"LocalSignTools/src/server"
+	"LocalSignTools/src/signing"
 	"LocalSignTools/src/storage"
 	"LocalSignTools/src/tunnel"
 	"LocalSignTools/src/util"
@@ -97,6 +98,16 @@ func main() {
 		"Used to automatically parse the server_url")
 	logJson := flag.Bool("log-json", false, "If enabled, outputs logs in JSON instead of pretty printing them.")
 	logLevel := flag.Uint("log-level", uint(zerolog.InfoLevel), "Logging level, 0 (debug) - 5 (panic).")
+	
+	// CLI mode flags
+	headless := flag.Bool("headless", false, "Run in headless CLI mode (no web server)")
+	ipaPath := flag.String("ipa", "", "IPA file path (required for headless mode)")
+	profileName := flag.String("profile", "", "Profile name from data/profiles/ (required for headless mode)")
+	outputPath := flag.String("output", "", "Output path for signed IPA (required for headless mode)")
+	signArgs := flag.String("args", "", "Signing arguments (optional, e.g., '-a -d')")
+	userBundleID := flag.String("bundle-id", "", "Custom bundle ID (optional)")
+	builderID := flag.String("builder", "", "Builder ID (optional, defaults to 'Integrated')")
+	
 	flag.Parse()
 
 	zerolog.SetGlobalLevel(zerolog.Level(*logLevel))
@@ -106,11 +117,35 @@ func main() {
 
 	config.Load(*configFile)
 	storage.Load()
+	
 	switch {
 	case *ngrokHost != "":
 		config.Current.ServerUrl = getPublicUrlFatal(&tunnel.Ngrok{Host: *ngrokHost, Proto: "https"})
 	case *cloudflaredHost != "":
 		config.Current.ServerUrl = getPublicUrlFatal(&tunnel.Cloudflare{Host: *cloudflaredHost})
+	}
+
+	if *headless {
+		// CLI mode
+		if *ipaPath == "" || *profileName == "" || *outputPath == "" {
+			log.Fatal().Msg("headless mode requires -ipa, -profile, and -output flags")
+		}
+		
+		opts := signing.CLISigningOptions{
+			IPAFile:      *ipaPath,
+			ProfileName:  *profileName,
+			OutputPath:   *outputPath,
+			SignArgs:     *signArgs,
+			UserBundleID: *userBundleID,
+			BuilderID:    *builderID,
+		}
+		
+		if err := signing.RunCLISigning(opts); err != nil {
+			log.Fatal().Err(err).Msg("CLI signing failed")
+		}
+		
+		log.Info().Str("output", *outputPath).Msg("CLI signing completed successfully")
+		os.Exit(0)
 	}
 
 	log.Info().Str("url", config.Current.ServerUrl).Msg("using server url")
@@ -149,7 +184,7 @@ func serve(host string, port uint64) {
 
 	log.Info().Msg("setting builder secrets")
 	for _, builder := range config.Current.Builder {
-		if err := setBuilderSecrets(builder); err != nil {
+		if err := config.SetBuilderSecrets(builder); err != nil {
 			log.Fatal().Err(err).Send()
 		}
 		// Setup integrated builder if enabled
@@ -411,17 +446,6 @@ func failJob(c echo.Context, job *storage.ReturnJob) error {
 	return c.NoContent(200)
 }
 
-// setBuilderSecrets sets the secrets for a builder
-func setBuilderSecrets(builder builders.Builder) error {
-	secrets := map[string]string{
-		"SECRET_KEY": config.Current.BuilderKey,
-		"SECRET_URL": config.Current.ServerUrl,
-	}
-	return errors.WithMessage(builder.SetSecrets(secrets), "set builder secrets")
-}
-
-// processIntegratedJob has been moved to builders.ProcessIntegratedJob
-// This function is no longer needed in main.go
 
 func getFavIcon(c echo.Context) error {
 	http.ServeContent(c.Response(), c.Request(), assets.FavIconStat.Name(), assets.FavIconStat.ModTime(), bytes.NewReader(assets.FavIconBytes))
@@ -632,7 +656,7 @@ func writeFileResponse(c echo.Context, file io.ReadSeeker, app storage.App) erro
 	if err != nil {
 		return err
 	}
-	//TODO: Should use the file's mod time, otherwise may tell client to use cached file even though it has changed
+	// Use the app's modification time for cache control
 	modTime, err := app.GetModTime()
 	if err != nil {
 		return err
@@ -794,7 +818,7 @@ func startSign(app storage.App, builder builders.Builder) error {
 
 	storage.Jobs.MakeSignJob(app.GetId(), profileId)
 
-	if err := setBuilderSecrets(builder); err != nil {
+	if err := config.SetBuilderSecrets(builder); err != nil {
 		return errors.WithMessage(err, "set builder secrets")
 	}
 

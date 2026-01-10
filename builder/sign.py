@@ -400,18 +400,52 @@ def fastlane_register_app(
     my_env["FASTLANE_PASSWORD"] = account_pass
     my_env["FASTLANE_TEAM_ID"] = team_id
 
-    # no-op if already exists
-    run_process(
-        "fastlane",
-        "produce",
-        "create",
-        "--skip_itc",
-        "--app_identifier",
-        bundle_id,
-        "--app-name",
-        clean_dev_portal_name(f"ST {bundle_id}"),
-        env=my_env,
-    )
+    # Try to create app ID, but ignore error if it already exists
+    try:
+        run_process(
+            "fastlane",
+            "produce",
+            "create",
+            "--skip_itc",
+            "--app_identifier",
+            bundle_id,
+            "--app-name",
+            clean_dev_portal_name(f"ST {bundle_id}"),
+            env=my_env,
+        )
+        print(f"Successfully created App ID {bundle_id}")
+    except Exception as e:
+        # Check if error is due to App ID already existing
+        # run_process raises Exception with dict containing stdout and stderr
+        error_data = e.args[0] if isinstance(e.args[0], dict) else {}
+        error_msg = (error_data.get("stderr", "") + " " + error_data.get("stdout", "")).lower()
+        
+        # Check for various "already exists" error patterns
+        already_exists_patterns = [
+            "already exists",
+            "not available",
+            "already registered",
+            "an app id with identifier",
+            "is not available",
+        ]
+        
+        if any(pattern in error_msg for pattern in already_exists_patterns):
+            print(f"App ID {bundle_id} already exists, continuing...")
+        elif "could not find app" in error_msg or "could not find app id" in error_msg:
+            # This means the App ID doesn't exist and creation failed
+            # This is a real error that should be raised
+            print(f"ERROR: Failed to create App ID {bundle_id}")
+            print(f"Error details: {error_data.get('stdout', '')}")
+            raise Exception(
+                f"Failed to create App ID '{bundle_id}'. "
+                f"Please check your Apple Developer account permissions and try again. "
+                f"Error: {error_data.get('stdout', 'Unknown error')}"
+            ) from e
+        else:
+            # Re-raise if it's a different error
+            print(f"ERROR: Unexpected error while creating App ID {bundle_id}")
+            print(f"Error details: {error_data.get('stdout', '')} {error_data.get('stderr', '')}")
+            raise
 
     supported_services = [
         "--push-notification",
@@ -431,17 +465,28 @@ def fastlane_register_app(
         "--app-group",
     ]
 
-    # clear any previous services
-    run_process(
-        "fastlane",
-        "produce",
-        "disable_services",
-        "--skip_itc",
-        "--app_identifier",
-        bundle_id,
-        *supported_services,
-        env=my_env,
-    )
+    # clear any previous services (ignore errors if App ID doesn't exist)
+    try:
+        run_process(
+            "fastlane",
+            "produce",
+            "disable_services",
+            "--skip_itc",
+            "--app_identifier",
+            bundle_id,
+            *supported_services,
+            env=my_env,
+        )
+    except Exception as e:
+        # Check if error is due to App ID not existing
+        error_data = e.args[0] if isinstance(e.args[0], dict) else {}
+        error_msg = (error_data.get("stderr", "") + " " + error_data.get("stdout", "")).lower()
+        
+        if "not available" in error_msg or "not found" in error_msg or "does not exist" in error_msg:
+            print(f"Warning: Could not disable services for {bundle_id} (App ID may not exist), continuing...")
+        else:
+            # Re-raise if it's a different error
+            raise
 
     icloud_entitlements = [
         "com.apple.developer.icloud-container-development-container-identifiers",
@@ -478,16 +523,28 @@ def fastlane_register_app(
 
     print("Enabling services:", service_flags)
 
-    run_process(
-        "fastlane",
-        "produce",
-        "enable_services",
-        "--skip_itc",
-        "--app_identifier",
-        bundle_id,
-        *service_flags,
-        env=my_env,
-    )
+    # Try to enable services, but ignore error if App ID doesn't exist or services are already enabled
+    try:
+        run_process(
+            "fastlane",
+            "produce",
+            "enable_services",
+            "--skip_itc",
+            "--app_identifier",
+            bundle_id,
+            *service_flags,
+            env=my_env,
+        )
+    except Exception as e:
+        # Check if error is due to App ID not existing or services already enabled
+        error_data = e.args[0] if isinstance(e.args[0], dict) else {}
+        error_msg = (error_data.get("stderr", "") + " " + error_data.get("stdout", "")).lower()
+        
+        if "not available" in error_msg or "not found" in error_msg or "does not exist" in error_msg:
+            print(f"Warning: Could not enable services for {bundle_id} (App ID may not exist or services already enabled), continuing...")
+        else:
+            # Re-raise if it's a different error
+            raise
 
     app_extras = [("cloud_container", "iCloud.", icloud_entitlements), ("group", "group.", group_entitlements)]
     with ThreadPool(len(app_extras)) as p:
@@ -508,26 +565,41 @@ def fastlane_get_prov_profile(
     my_env["FASTLANE_TEAM_ID"] = team_id
 
     with tempfile.TemporaryDirectory() as tmpdir_str:
-        run_process(
-            "fastlane",
-            "sigh",
-            "renew",
-            "--app_identifier",
-            bundle_id,
-            "--provisioning_name",
-            clean_dev_portal_name(f"ST {bundle_id} {prov_type}"),
-            "--force",
-            "--skip_install",
-            "--include_mac_in_profiles",
-            "--platform",
-            platform,
-            "--" + prov_type,
-            "--output_path",
-            tmpdir_str,
-            "--filename",
-            "prov.mobileprovision",
-            env=my_env,
-        )
+        try:
+            run_process(
+                "fastlane",
+                "sigh",
+                "renew",
+                "--app_identifier",
+                bundle_id,
+                "--provisioning_name",
+                clean_dev_portal_name(f"ST {bundle_id} {prov_type}"),
+                "--force",
+                "--skip_install",
+                "--include_mac_in_profiles",
+                "--platform",
+                platform,
+                "--" + prov_type,
+                "--output_path",
+                tmpdir_str,
+                "--filename",
+                "prov.mobileprovision",
+                env=my_env,
+            )
+        except Exception as e:
+            # Check if error is due to App ID not existing
+            error_data = e.args[0] if isinstance(e.args[0], dict) else {}
+            error_msg = (error_data.get("stderr", "") + " " + error_data.get("stdout", "")).lower()
+            
+            if "could not find app" in error_msg or "could not find app id" in error_msg or "app with app identifier" in error_msg:
+                raise Exception(
+                    f"App ID '{bundle_id}' does not exist in Apple Developer Portal. "
+                    f"Please register it first using 'fastlane produce create -u {account_name} -a {bundle_id} --skip_itc' "
+                    f"or ensure fastlane_register_app succeeded."
+                ) from e
+            else:
+                # Re-raise if it's a different error
+                raise
         shutil.copy2(Path(tmpdir_str).joinpath("prov.mobileprovision"), out_file)
 
 
@@ -876,15 +948,38 @@ class Signer:
             print("Generating provisioning profile...")
             prov_type = "adhoc" if self.is_distribution else "development"
             platform = "macos" if self.is_mac_app else "ios"
-            fastlane_get_prov_profile(
-                self.opts.account_name,
-                self.opts.account_pass,
-                self.opts.team_id,
-                data.bundle_id,
-                prov_type,
-                platform,
-                embedded_prov,
-            )
+            
+            # Try to get provisioning profile, retry with app registration if App ID not found
+            try:
+                fastlane_get_prov_profile(
+                    self.opts.account_name,
+                    self.opts.account_pass,
+                    self.opts.team_id,
+                    data.bundle_id,
+                    prov_type,
+                    platform,
+                    embedded_prov,
+                )
+            except Exception as e:
+                error_msg = str(e).lower()
+                if "app id" in error_msg and ("does not exist" in error_msg or "could not find" in error_msg):
+                    print(f"App ID {data.bundle_id} not found, attempting to register again...")
+                    # Retry app registration (this time it should succeed or fail with a clear error)
+                    fastlane_register_app(
+                        self.opts.account_name, self.opts.account_pass, self.opts.team_id, data.bundle_id, data.entitlements
+                    )
+                    # Retry getting provisioning profile
+                    fastlane_get_prov_profile(
+                        self.opts.account_name,
+                        self.opts.account_pass,
+                        self.opts.team_id,
+                        data.bundle_id,
+                        prov_type,
+                        platform,
+                        embedded_prov,
+                    )
+                else:
+                    raise
 
         entitlements_plist = Path(tmpdir).joinpath("entitlements.plist")
         with open(entitlements_plist, "wb") as f:
@@ -1239,11 +1334,17 @@ def run():
         signed_ipa = Path("signed.ipa")
         archive_zip(temp_dir, signed_ipa)
 
-    print("Uploading...")
-    node_upload(signed_ipa, f"{secret_url}/jobs/{job_id}/tus/", capture=False)
-    file_id = read_file(Path("file_id.txt"))
-    bundle_id = read_file(Path("bundle_id.txt"))
-    curl_with_auth(f"{secret_url}/jobs/{job_id}/signed", [("file_id", file_id), ("bundle_id", bundle_id)])
+    # In integrated builder mode, the signed file is already saved directly to storage by the Go code
+    # No need to upload to server (and server might not be running in CLI mode)
+    is_integrated_builder = os.environ.get("INTEGRATED_BUILDER") == "1"
+    if not is_integrated_builder:
+        print("Uploading...")
+        node_upload(signed_ipa, f"{secret_url}/jobs/{job_id}/tus/", capture=False)
+        file_id = read_file(Path("file_id.txt"))
+        bundle_id = read_file(Path("bundle_id.txt"))
+        curl_with_auth(f"{secret_url}/jobs/{job_id}/signed", [("file_id", file_id), ("bundle_id", bundle_id)])
+    else:
+        print("Integrated builder mode: signed file will be saved to storage by Go process, skipping server upload")
 
 
 if __name__ == "__main__":
@@ -1289,5 +1390,9 @@ if __name__ == "__main__":
         print("Cleaning up...")
         security_remove_keychain(keychain_name)
         if failed:
-            curl_with_auth(f"{secret_url}/jobs/{job_id}/fail")
+            # Try to notify server about failure, but don't fail if server is not available (CLI mode)
+            try:
+                curl_with_auth(f"{secret_url}/jobs/{job_id}/fail", check=False)
+            except Exception as e:
+                print(f"Warning: Failed to notify server about failure (this is normal in CLI mode): {e}")
             sys.exit(1)

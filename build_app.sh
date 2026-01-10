@@ -34,8 +34,8 @@ echo ""
 
 # 実行可能ファイルを.appバンドルにコピー
 echo -e "${YELLOW}実行可能ファイルを.appバンドルにコピー中...${NC}"
-cp "$EXECUTABLE" "$APP_EXECUTABLE"
-chmod +x "$APP_EXECUTABLE"
+cp "$EXECUTABLE" "${APP_EXECUTABLE}.bin"
+chmod +x "${APP_EXECUTABLE}.bin"
 echo -e "${GREEN}✓ コピー完了${NC}"
 echo ""
 
@@ -72,17 +72,14 @@ EOF
 echo -e "${GREEN}✓ Info.plist作成完了${NC}"
 echo ""
 
-# ラッパースクリプトを作成（作業ディレクトリを設定）
+# ラッパースクリプトを作成（引数を渡せるように修正）
 echo -e "${YELLOW}ラッパースクリプトを作成中...${NC}"
-# 元の実行可能ファイルをバックアップ
-mv "$APP_EXECUTABLE" "${APP_EXECUTABLE}.bin"
-
-# ラッパースクリプトを作成
 cat > "$APP_EXECUTABLE" <<'WRAPPER_EOF'
 #!/bin/bash
 
 # LocalSignTools ラッパースクリプト
 # .appバンドルから実行された場合、作業ディレクトリをプロジェクトルートに設定
+# コマンドライン引数も渡せるように修正
 
 # .appバンドルの場所を取得
 APP_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
@@ -101,13 +98,22 @@ if [ ! -f "$ACTUAL_EXECUTABLE" ]; then
     exit 1
 fi
 
-# ターミナルウィンドウを開いて実行
-osascript <<EOF
+# すべての引数を取得
+ARGS="$@"
+
+# headlessモード（CLIモード）の場合は、ターミナルを開かずに直接実行
+if [[ "$ARGS" == *"-headless"* ]]; then
+    # CLIモード: 直接実行（標準出力に出力）
+    exec "$ACTUAL_EXECUTABLE" $ARGS
+else
+    # 通常モード: ターミナルウィンドウを開いて実行
+    osascript <<EOF
 tell application "Terminal"
     activate
-    do script "cd '$PROJECT_ROOT' && '$ACTUAL_EXECUTABLE'"
+    do script "cd '$PROJECT_ROOT' && '$ACTUAL_EXECUTABLE' $ARGS"
 end tell
 EOF
+fi
 WRAPPER_EOF
 
 chmod +x "$APP_EXECUTABLE"
@@ -117,8 +123,13 @@ echo ""
 echo -e "${GREEN}=== ビルド完了 ===${NC}"
 echo ""
 echo "以下の方法で実行できます："
-echo "  1. Finderで ${APP_NAME}.app をダブルクリック"
-echo "  2. ターミナルから: open ${APP_NAME}.app"
 echo ""
-echo "アプリケーションはターミナルウィンドウで起動し、"
-echo "Webインターフェースが http://localhost:8080 で利用可能になります。"
+echo "1. ダブルクリック（通常モード）:"
+echo "   Finderで ${APP_NAME}.app をダブルクリック"
+echo ""
+echo "2. CLIモード（引数付き）:"
+echo "   SignTools.app/Contents/MacOS/SignTools -headless -ipa app.ipa -profile profile_name -output signed.ipa"
+echo ""
+echo "3. 直接実行可能ファイル（推奨）:"
+echo "   SignTools.app/Contents/MacOS/SignTools.bin -headless -ipa app.ipa -profile profile_name -output signed.ipa"
+echo ""

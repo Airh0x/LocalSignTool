@@ -261,14 +261,15 @@ func ProcessIntegratedJob(integrated *Integrated, jobStorage JobStorage, appStor
 				for scanner.Scan() {
 					line := scanner.Text()
 					multiWriter.Write([]byte(line + "\n"))
-					// Log important messages (2FA, errors, etc.)
+					// Log only truly important messages (errors, critical warnings, 2FA prompts)
+					// Skip routine fastlane output to reduce log noise
 					lineLower := strings.ToLower(line)
-					if strings.Contains(lineLower, "2fa") ||
-						strings.Contains(lineLower, "two-factor") ||
-						strings.Contains(lineLower, "authentication") ||
-						strings.Contains(lineLower, "error") ||
-						strings.Contains(lineLower, "login") ||
-						strings.Contains(lineLower, "fastlane") {
+					if strings.Contains(lineLower, "error") ||
+						strings.Contains(lineLower, "failed") ||
+						strings.Contains(lineLower, "exception") ||
+						strings.Contains(lineLower, "two-factor authentication (2fa) code") ||
+						strings.Contains(lineLower, "please enter") ||
+						(strings.Contains(lineLower, "2fa") && (strings.Contains(lineLower, "code") || strings.Contains(lineLower, "required"))) {
 						log.Info().Str("line", line).Msg("sign script")
 					}
 				}

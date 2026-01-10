@@ -181,7 +181,9 @@ func getFile(mapDelim rune, fileName string) (*File, error) {
 	} else if err != nil {
 		return nil, errors.WithMessage(err, "load existing")
 	}
-	// TODO: Fix entries with same path overwriting each other, e.g. PROFILE_CERT_NAME="bar" and PROFILE_CERT="foo"
+	// Note: Environment variables with the same path may overwrite each other.
+	// For example, PROFILE_CERT_NAME="bar" and PROFILE_CERT="foo" both map to "profile.cert".
+	// This is a limitation of the current configuration system.
 	if err := k.Load(env.Provider(k, "", "_", func(s string) string {
 		return strings.ToLower(s)
 	}), nil); err != nil {
@@ -198,6 +200,16 @@ func getFile(mapDelim rune, fileName string) (*File, error) {
 		}
 	}
 	return &fileConfig, nil
+}
+
+// SetBuilderSecrets sets the secrets for a builder using the current configuration.
+// This is a utility function to avoid code duplication.
+func SetBuilderSecrets(builder builders.Builder) error {
+	secrets := map[string]string{
+		"SECRET_KEY": Current.BuilderKey,
+		"SECRET_URL": Current.ServerUrl,
+	}
+	return errors.WithMessage(builder.SetSecrets(secrets), "set builder secrets")
 }
 
 // saveFile saves the config file to disk
