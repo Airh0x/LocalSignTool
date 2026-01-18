@@ -11,6 +11,9 @@ LocalSignTools is a streamlined local execution version of SignTools that includ
 - **Integrated Builder**: Signing operations run internally (no separate server required)
 - **Headless CLI Mode**: Complete command-line interface for signing operations without starting a web server
 - **Watch Folder Mode**: Automatically sign IPA files when they are added to a watch folder
+- **Easy Setup**: Automated setup script that checks dependencies and builds the project
+- **Dependency Auto-Check**: Automatically checks for required dependencies on startup
+- **Automatic npm Install**: npm dependencies are automatically installed when needed
 - **Simple Configuration**: Only the integrated version is included, keeping the codebase clean
 - **Automatic Port Management**: Automatically uses a random port if the default port is in use
 - **Automatic Cleanup**: Automatically removes old upload files
@@ -39,9 +42,43 @@ gem install fastlane
 
 ## Setup
 
+### Quick Start (Recommended)
+
+The easiest way to get started is to use the automated setup script:
+
+```bash
+cd LocalSignTools
+
+# Run the setup script (checks dependencies, installs npm packages, and builds)
+./setup.sh
+```
+
+The `setup.sh` script will:
+1. Check for required dependencies (Go, fastlane, Python3, Node.js, npm)
+2. Install npm dependencies automatically (`builder/node-utils/`)
+3. Download Go dependencies
+4. Build the `SignTools` executable
+
+**Note:** The setup script will prompt you if any required dependencies are missing. Make sure to install them before continuing.
+
+### Manual Setup
+
+If you prefer to set up manually or need more control, follow the steps below.
+
 ### 1. Build the Project
 
-#### Option A: Build .app Bundle (Recommended)
+#### Option A: Automated Setup Script (Recommended)
+
+```bash
+cd LocalSignTools
+
+# Run the setup script
+./setup.sh
+```
+
+This will automatically check dependencies, install npm packages, and build the project.
+
+#### Option B: Build .app Bundle (Recommended for Double-Click Launch)
 
 ```bash
 cd LocalSignTools
@@ -67,7 +104,7 @@ You do **NOT** need to rebuild when:
 
 The `data/` folder contents are loaded at runtime, so changes take effect immediately when you restart the application.
 
-#### Option B: Build Executable Only
+#### Option C: Build Executable Only (Manual)
 
 ```bash
 cd LocalSignTools
@@ -79,7 +116,19 @@ go mod download
 go build -o SignTools
 ```
 
-### 2. Prepare Configuration File
+### 2. Dependency Checks
+
+The application automatically checks for required dependencies on startup:
+- **fastlane**: Required for signing operations
+- **Python 3**: Required for signing scripts (usually included with macOS)
+- **Node.js / npm**: Required for signing scripts
+- **npm dependencies**: Automatically installed if missing (`builder/node-utils/node_modules`)
+
+If dependencies are missing, the application will display warnings with instructions on how to install them. You can also run `./setup.sh` to automatically set up everything.
+
+**Note:** npm dependencies in `builder/node-utils/` are automatically installed when needed during signing operations, so you don't need to manually run `npm install` in most cases.
+
+### 3. Prepare Configuration File
 
 The `signer-cfg.yml` file will be automatically generated on first run. Edit it as needed:
 
@@ -96,7 +145,7 @@ cleanup_interval_mins: 5
 sign_timeout_mins: 60
 ```
 
-### 3. Set Up Signing Profiles
+### 4. Set Up Signing Profiles
 
 Create signing profiles in the `data/profiles/` directory.
 
@@ -126,7 +175,7 @@ Place the following files in `data/profiles/custom_profile/`:
 
 **Important:** Do **NOT** include `account_name.txt` or `account_pass.txt` in a custom provisioning profile directory. If these files are present, the profile will be treated as a developer account profile instead.
 
-### 4. Set Permissions for Sensitive Files
+### 5. Set Permissions for Sensitive Files
 
 Restrict permissions on files containing sensitive information:
 
@@ -452,6 +501,7 @@ If the default port (8080) is in use, a random port will be automatically assign
 LocalSignTools/
 ├── SignTools                 # Main executable (built)
 ├── SignTools.app            # macOS .app bundle (built)
+├── setup.sh                 # Automated setup script (checks dependencies, installs npm packages, builds)
 ├── build_app.sh             # Script to build .app bundle
 ├── watch_folder.py          # Watch folder script for automated signing
 ├── watch_config.example.json # Example configuration for watch folder
@@ -544,6 +594,13 @@ This project is based on [SignTools](https://github.com/SignTools/SignTools), an
 We would like to express our gratitude to the original SignTools project and its contributors for creating an excellent foundation for iOS app signing workflows.
 
 ## Recent Improvements
+
+### Setup and Environment Improvements
+
+- **Automated Setup Script**: Added `setup.sh` script that automatically checks dependencies, installs npm packages, and builds the project
+- **Startup Dependency Checks**: Application now checks for required dependencies on startup and provides helpful warnings if missing
+- **Automatic npm Install**: npm dependencies are automatically installed during signing operations if not already present
+- **Improved Error Messages**: Better guidance when dependencies are missing, with instructions on how to install them
 
 ### CLI Mode Enhancements
 

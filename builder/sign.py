@@ -111,7 +111,37 @@ def plist_dump(data: Any, f: IO[bytes]):
 
 
 def network_init():
-    return run_process("npm", "install", cwd="node-utils")
+    """Ensure npm dependencies are installed.
+    
+    Checks if node_modules exists in node-utils directory.
+    If not, automatically runs npm install.
+    """
+    node_utils_dir = Path("node-utils")
+    node_modules_dir = node_utils_dir / "node_modules"
+    
+    # Check if node_modules exists
+    if node_modules_dir.exists() and node_modules_dir.is_dir():
+        # Check if package.json exists and node_modules is not empty
+        package_json = node_utils_dir / "package.json"
+        if package_json.exists():
+            # Check if at least one package is installed (check for easydl or tus-js-client)
+            if (node_modules_dir / "easydl").exists() or (node_modules_dir / "tus-js-client").exists():
+                return  # Dependencies already installed
+            else:
+                print("npm dependencies appear incomplete, reinstalling...")
+        else:
+            print("package.json not found, skipping npm install")
+            return
+    
+    # Install npm dependencies
+    print("Installing npm dependencies...")
+    try:
+        run_process("npm", "install", cwd=str(node_utils_dir))
+        print("✓ npm dependencies installed successfully")
+    except Exception as e:
+        print(f"⚠ Warning: Failed to install npm dependencies: {e}")
+        print("  You may need to run 'npm install' manually in builder/node-utils/")
+        # Don't raise exception - continue if INTEGRATED_BUILDER mode (dependencies may not be needed)
 
 
 def node_upload(file: Path, endpoint: str, capture: bool = True):

@@ -58,6 +58,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"os/exec"
 	"path"
 	"path/filepath"
 	"sort"
@@ -115,6 +116,9 @@ func main() {
 		log.Logger = log.Output(zerolog.ConsoleWriter{Out: os.Stderr})
 	}
 
+	// Check dependencies before loading config
+	checkDependencies()
+	
 	config.Load(*configFile)
 	storage.Load()
 	
@@ -150,6 +154,55 @@ func main() {
 
 	log.Info().Str("url", config.Current.ServerUrl).Msg("using server url")
 	serve(*host, *port)
+}
+
+// checkDependencies checks for required external dependencies and logs warnings for missing ones
+func checkDependencies() {
+	var missing []string
+	var warnings []string
+
+	// Check fastlane
+	if _, err := exec.LookPath("fastlane"); err != nil {
+		missing = append(missing, "fastlane")
+		log.Warn().Msg("fastlane not found. Install with: brew install fastlane or gem install fastlane")
+	}
+
+	// Check Python3
+	if _, err := exec.LookPath("python3"); err != nil {
+		missing = append(missing, "python3")
+		log.Warn().Msg("python3 not found. Python 3 is typically included with macOS. Please install manually if needed.")
+	}
+
+	// Check Node.js
+	if _, err := exec.LookPath("node"); err != nil {
+		missing = append(missing, "node")
+		log.Warn().Msg("Node.js not found. Install with: brew install node")
+	} else {
+		// Check npm (usually comes with Node.js)
+		if _, err := exec.LookPath("npm"); err != nil {
+			warnings = append(warnings, "npm")
+			log.Warn().Msg("npm not found. npm usually comes with Node.js. Please ensure Node.js is properly installed.")
+		}
+	}
+
+	// Check npm dependencies
+	nodeUtilsDir := "builder/node-utils"
+	nodeModulesDir := filepath.Join(nodeUtilsDir, "node_modules")
+	if _, err := os.Stat(nodeModulesDir); os.IsNotExist(err) {
+		warnings = append(warnings, "npm dependencies")
+		log.Warn().Str("dir", nodeUtilsDir).Msg("npm dependencies not installed. They will be installed automatically when signing, or run: npm install --prefix builder/node-utils")
+	}
+
+	// Log summary
+	if len(missing) > 0 {
+		log.Warn().Strs("missing", missing).Msg("some required dependencies are missing. The application may not work correctly.")
+		log.Info().Msg("To install missing dependencies, run: ./setup.sh")
+	}
+
+	if len(warnings) > 0 && len(missing) == 0 {
+		// Only show warnings if no critical dependencies are missing
+		log.Info().Strs("warnings", warnings).Msg("some optional dependencies are missing, but they will be handled automatically if needed")
+	}
 }
 
 // getPublicUrlFatal obtains a public URL from a tunnel provider, or exits on error
